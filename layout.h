@@ -7,11 +7,6 @@
 #include <string>
 #include <vector>
 
-//int copyCount = 0;
-//int moveCount = 0;
-
-// #define LAYOUT_VERBOSE
-
 namespace Layout {
     enum AxisDirection {
         HORIZONTAL,
