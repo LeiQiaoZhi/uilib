@@ -10,6 +10,8 @@
 //int copyCount = 0;
 //int moveCount = 0;
 
+// #define LAYOUT_VERBOSE
+
 namespace Layout {
     enum AxisDirection {
         HORIZONTAL,
@@ -29,6 +31,12 @@ namespace Layout {
     };
 
 
+    struct LayoutElement;
+    // using DrawFn = void(*)(LayoutElement *);
+    using DrawFn = std::function<void(LayoutElement *)>;
+    // using SizeFn = void(*)(LayoutElement *);
+    using SizeFn = std::function<void(LayoutElement *)>;
+
     struct LayoutElement {
         std::string debugName = "Element";
         int width = 0;
@@ -45,6 +53,11 @@ namespace Layout {
         Alignment crossAlignment = START;
 
         std::vector<LayoutElement> children;
+
+        DrawFn drawFn = nullptr;
+        SizeFn sizeFn = nullptr;
+
+        LayoutElement **referencePointer = nullptr;
 
         int GetMainCoord() const {
             return mainAxis == HORIZONTAL ? x : y;
@@ -117,6 +130,28 @@ namespace Layout {
             return *this;
         }
 
+        LayoutBuilder &width(const int width) {
+            current.width = width;
+            current.widthSizing = FIXED;
+            return *this;
+        }
+
+        LayoutBuilder &width(const Sizing widthSizing) {
+            current.widthSizing = widthSizing;
+            return *this;
+        }
+
+        LayoutBuilder &height(const int height) {
+            current.height = height;
+            current.heightSizing = FIXED;
+            return *this;
+        }
+
+        LayoutBuilder &height(const Sizing heightSizing) {
+            current.heightSizing = heightSizing;
+            return *this;
+        }
+
         LayoutBuilder &size(const int width, const int height) {
             current.width = width;
             current.widthSizing = FIXED;
@@ -171,6 +206,21 @@ namespace Layout {
             return *this;
         }
 
+        LayoutBuilder &drawFn(const DrawFn drawFn) {
+            current.drawFn = drawFn;
+            return *this;
+        }
+
+        LayoutBuilder &sizeFn(const SizeFn sizeFn) {
+            current.sizeFn = sizeFn;
+            return *this;
+        }
+
+        LayoutBuilder &pointer(LayoutElement **pointer) {
+            current.referencePointer = pointer;
+            return *this;
+        }
+
         operator LayoutElement &&() {
             return std::move(current);
         }
@@ -182,10 +232,9 @@ namespace Layout {
         }
     };
 
-    #ifdef LAYOUT_IMPLEMENTATION
+#ifdef LAYOUT_IMPLEMENTATION
 
     void CalculateGrow(LayoutElement &element) {
-        std::cout << "Growing " << element.debugName << std::endl;
         std::vector<LayoutElement *> childrenGrowMain;
         std::vector<LayoutElement *> childrenGrowCross;
         int childrenDimensionMain = 0;
@@ -202,10 +251,12 @@ namespace Layout {
         if (childrenGrowMain.size() > 0) {
             int mainRemain = element.GetDimension(element.mainAxis) - childrenDimensionMain
                              - element.padding * 2 - element.gap * (element.children.size() - 1);
+#ifdef LAYOUT_VERBOSE
             std::cout << "Grow along main, remain: " << mainRemain << std::endl << "\t";
             for (const auto *child: childrenGrowMain)
                 std::cout << child->debugName << " ";
             std::cout << std::endl;
+#endif
 
             std::vector<LayoutElement *> childrenToGrow;
             while (mainRemain > 0) {
@@ -239,7 +290,9 @@ namespace Layout {
                 if (secondSmallestIndex != -1) {
                     growAmount = std::min(growAmount, secondSmallest - smallest);
                 }
+#ifdef LAYOUT_VERBOSE
                 std::cout << "Grow pass, remain:" << mainRemain << " grow by:" << growAmount << std::endl;
+#endif
 
                 // grow
                 for (auto *child: childrenToGrow) {
@@ -251,20 +304,24 @@ namespace Layout {
         }
 
         if (childrenGrowCross.size() > 0) {
+#ifdef LAYOUT_VERBOSE
             std::cout << "Grow along cross, " << std::endl << "\t";
             for (auto *child: childrenGrowCross) {
                 int crossRemain = element.GetDimension(element.GetCrossAxis())
                                   - child->GetDimension(element.GetCrossAxis()) - element.padding * 2;
                 std::cout << child->debugName << " " << crossRemain << ",";
-                child->AddDimension(element.GetCrossAxis(), crossRemain);
             }
             std::cout << std::endl;
+#endif
+            for (auto *child: childrenGrowCross) {
+                int crossRemain = element.GetDimension(element.GetCrossAxis())
+                                  - child->GetDimension(element.GetCrossAxis()) - element.padding * 2;
+                child->AddDimension(element.GetCrossAxis(), crossRemain);
+            }
         }
     }
 
     void CalculateSize(LayoutElement &element) {
-        std::cout << "Sizing " << element.debugName << std::endl;
-
         // recalculate Fit sizing
         int mainSum = element.gap * (element.children.size() - 1);
         if (element.children.size() > 0)
@@ -302,11 +359,30 @@ namespace Layout {
         }
     }
 
+    void CustomSizing(LayoutElement &root) {
+        std::vector<LayoutElement *> toExplore = {&root};
+        while (!toExplore.empty()) {
+            LayoutElement *current = toExplore.back();
+            toExplore.pop_back();
+
+            if (current->sizeFn != nullptr)
+                current->sizeFn(current);
+
+            for (auto &child: current->children) {
+                toExplore.emplace_back(&child);
+            }
+        }
+    }
+
     void CalculateLayout(LayoutElement &root) {
         //  Sizes
         DFS_Size(root);
 
         // Grow
+        DFS_Grow(root);
+
+        CustomSizing(root);
+
         DFS_Grow(root);
 
         // Positions
@@ -349,16 +425,48 @@ namespace Layout {
             }
 
             for (auto &child: current->children) {
+#ifdef LAYOUT_VERBOSE
                 std::cout << TextFormat("[%s], %p, %s, %s%ix%s%i, (%i,%i), P%i G%i", child.debugName.c_str(), &child,
                                         child.mainAxis == HORIZONTAL ? "H" : "V",
                                         child.SizingChar(child.widthSizing).c_str(), child.width,
                                         child.SizingChar(child.heightSizing).c_str(), child.height,
                                         child.x, child.y, child.padding, child.gap) << std::endl;
+#endif
                 toExplore.emplace_back(&child);
             }
         }
     }
-    #endif
+
+    void InitReferencePointers(LayoutElement &root) {
+        std::vector<LayoutElement *> toExplore = {&root};
+        while (!toExplore.empty()) {
+            LayoutElement *current = toExplore.back();
+            toExplore.pop_back();
+
+            if (current->referencePointer != nullptr)
+                *current->referencePointer = current;
+
+            for (auto &child: current->children) {
+                toExplore.emplace_back(&child);
+            }
+        }
+    }
+
+    void DrawUI(LayoutElement &root) {
+        std::vector<LayoutElement *> toExplore = {&root};
+        while (!toExplore.empty()) {
+            LayoutElement *current = toExplore.back();
+            toExplore.pop_back();
+
+            if (current->drawFn != nullptr)
+                current->drawFn(current);
+
+            for (auto &child: current->children) {
+                toExplore.emplace_back(&child);
+            }
+        }
+    }
+#endif
 }
 
 #endif //LAYOUT_H
