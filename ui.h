@@ -11,8 +11,19 @@
 #include <vector>
 
 namespace UI {
-    using IsMousePressed = bool(*)();
-    inline IsMousePressed isMousePressedFn = nullptr;
+    using UI_Color = std::array<int, 4>;
+    inline UI_Color UI_GRAY = {128, 128, 128, 255};
+    inline UI_Color UI_BLACK = {0, 0, 0, 0};
+    inline UI_Color UI_WHITE = {255, 255, 255, 255};
+    inline UI_Color UI_RED = {255, 0, 0, 255};
+    inline UI_Color UI_GREEN = {0, 255, 0, 255};
+    inline UI_Color UI_BLUE = {0, 0, 255, 255};
+    inline UI_Color UI_YELLOW = {255, 255, 0, 255};
+    inline UI_Color UI_CYAN = {0, 255, 255, 255};
+    inline UI_Color UI_MAGENTA = {255, 0, 255, 255};
+
+    using IsMousePressedFn = bool(*)();
+    inline IsMousePressedFn isMousePressedFn = nullptr;
 
     inline bool UI_IsMousePressed() {
         if (isMousePressedFn != nullptr) {
@@ -31,10 +42,19 @@ namespace UI {
         return {0, 0};
     }
 
+    using DrawRectangleFn = void(*)(int, int, int, int, std::array<int, 4>);
+    inline DrawRectangleFn drawRectFn = nullptr;
+
+    inline void UI_DrawRectangle(const int x, const int y, const int w, const int h, const std::array<int, 4> color) {
+        if (drawRectFn != nullptr) {
+            drawRectFn(x, y, w, h, color);
+        }
+    }
+
     using DrawTextFn = void(*)(const char *, int, int, float);
     inline DrawTextFn drawTextFn = nullptr;
 
-    inline void UI_DrawText(const char *str, const int x, const int y, float scale) {
+    inline void UI_DrawText(const char *str, const int x, const int y, const float scale) {
         if (drawTextFn != nullptr) {
             drawTextFn(str, x, y, scale);
         }

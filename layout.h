@@ -375,6 +375,10 @@ namespace Layout {
             for (auto *child: childrenGrowCross) {
                 int crossRemain = element.GetDimension(element.GetCrossAxis())
                                   - child->GetDimension(element.GetCrossAxis()) - element.padding * 2;
+                int max = child->GetMaxDimension(element.GetCrossAxis());
+                if (child->GetDimension(element.GetCrossAxis()) + crossRemain > max) {
+                    crossRemain = max - child->GetDimension(element.GetCrossAxis());
+                }
                 child->AddDimension(element.GetCrossAxis(), crossRemain);
             }
         }
