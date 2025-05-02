@@ -11,6 +11,26 @@
 #include <vector>
 
 namespace UI {
+    using IsMousePressed = bool(*)();
+    inline IsMousePressed isMousePressedFn = nullptr;
+
+    inline bool UI_IsMousePressed() {
+        if (isMousePressedFn != nullptr) {
+            return isMousePressedFn();
+        }
+        return false;
+    }
+
+    using GetMousePosFn = std::array<float, 2>(*)();
+    inline GetMousePosFn getMousePosFn = nullptr;
+
+    inline std::array<float, 2> UI_GetMousePos() {
+        if (getMousePosFn != nullptr) {
+            return getMousePosFn();
+        }
+        return {0, 0};
+    }
+
     using DrawTextFn = void(*)(const char *, int, int, float);
     inline DrawTextFn drawTextFn = nullptr;
 
@@ -104,19 +124,72 @@ namespace UI {
         return output;
     }
 
+    inline bool CollisionMouseLayout(Layout::LayoutElement &element) {
+        std::array<float, 2> mouse = UI_GetMousePos();
+        return mouse[0] >= element.x && mouse[0] <= element.x + element.width &&
+               mouse[1] >= element.y && mouse[1] <= element.y + element.height;
+    }
+
+    inline void DetectInputEvents(Layout::LayoutElement &root) {
+        std::vector<Layout::LayoutElement *> toExplore = {&root};
+        while (!toExplore.empty()) {
+            Layout::LayoutElement *current = toExplore.back();
+            toExplore.pop_back();
+
+            if (current->updateFn != nullptr)
+                current->updateFn(current);
+            if (CollisionMouseLayout(*current) && !current->hovering) {
+                if (current->onMouseEnterFn != nullptr) {
+                    current->onMouseEnterFn(current);
+                    current->hovering = true;
+                }
+            }
+            if (!CollisionMouseLayout(*current) && current->hovering) {
+                if (current->onMouseLeaveFn != nullptr) {
+                    current->onMouseLeaveFn(current);
+                    current->hovering = false;
+                }
+            }
+            if (CollisionMouseLayout(*current) && UI_IsMousePressed()) {
+                if (current->onMouseClickFn != nullptr) {
+                    current->onMouseClickFn(current);
+                }
+            }
+
+            for (auto &child: current->children) {
+                toExplore.emplace_back(&child);
+            }
+        }
+    }
+
+    enum TextWrap {
+        WRAP_NONE = 0,
+        WRAP_WORD = 1,
+    };
+
     struct UI_Text {
         Layout::LayoutElement *layout;
         const char *text;
         float scale = 1.0;
+        TextWrap wrap = WRAP_WORD;
 
         void SizeFn(Layout::LayoutElement *layout) {
-            layout->height = UI_MeasureTextHeight(UI_WrapText(text, 1.0, layout->width).c_str(),
-                                                  1.0);
+            if (wrap == WRAP_WORD) {
+                layout->height = UI_MeasureTextHeight(UI_WrapText(text, scale, layout->width).c_str(),
+                                                      scale);
+            } else {
+                layout->width = UI_MeasureText(text, scale);
+                layout->height = UI_MeasureTextHeight(text, scale);
+            }
         }
 
         void DrawFn(Layout::LayoutElement *layout) {
-            UI_DrawText(
-                UI_WrapText(text, 1.0, layout->width).c_str(), layout->x, layout->y, 1.0f);
+            if (wrap == WRAP_WORD) {
+                UI_DrawText(
+                    UI_WrapText(text, scale, layout->width).c_str(), layout->x, layout->y, scale);
+            } else {
+                UI_DrawText(text, layout->x, layout->y, scale);
+            }
         }
 
         void Link() {

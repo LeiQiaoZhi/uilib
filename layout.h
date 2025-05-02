@@ -25,12 +25,10 @@ namespace Layout {
         GROW
     };
 
-
     struct LayoutElement;
-    // using DrawFn = void(*)(LayoutElement *);
     using DrawFn = std::function<void(LayoutElement *)>;
-    // using SizeFn = void(*)(LayoutElement *);
     using SizeFn = std::function<void(LayoutElement *)>;
+    using EventFn = std::function<void(LayoutElement *)>;
 
     struct LayoutElement {
         std::string debugName = "Element";
@@ -40,6 +38,11 @@ namespace Layout {
         int y = 0;
         int padding = 20;
         int gap = 10;
+
+        int maxWidth = INT_MAX;
+        int maxHeight = INT_MAX;
+        int minWidth = 0;
+        int minHeight = 0;
 
         AxisDirection mainAxis = HORIZONTAL;
         Sizing widthSizing = FIXED;
@@ -51,6 +54,11 @@ namespace Layout {
 
         DrawFn drawFn = nullptr;
         SizeFn sizeFn = nullptr;
+        EventFn updateFn = nullptr;
+        EventFn onMouseEnterFn = nullptr;
+        EventFn onMouseLeaveFn = nullptr;
+        EventFn onMouseClickFn = nullptr;
+        bool hovering;
 
         LayoutElement **referencePointer = nullptr;
 
@@ -103,12 +111,15 @@ namespace Layout {
         }
 
         void AddDimension(AxisDirection axis, int add) {
-            if (axis == HORIZONTAL) {
+            if (axis == HORIZONTAL)
                 width += add;
-            } else {
+            else
                 height += add;
-            }
         }
+
+        int GetMaxDimension(const AxisDirection axis) const {
+            return axis == HORIZONTAL ? maxWidth : maxHeight;
+        };
 
         // constructor
         LayoutElement() {
@@ -144,6 +155,26 @@ namespace Layout {
 
         LayoutBuilder &height(const Sizing heightSizing) {
             current.heightSizing = heightSizing;
+            return *this;
+        }
+
+        LayoutBuilder &maxHeight(const int maxHeight) {
+            current.maxHeight = maxHeight;
+            return *this;
+        }
+
+        LayoutBuilder &maxWidth(const int maxWidth) {
+            current.maxWidth = maxWidth;
+            return *this;
+        }
+
+        LayoutBuilder &minHeight(const int minHeight) {
+            current.minHeight = minHeight;
+            return *this;
+        }
+
+        LayoutBuilder &minWidth(const int minWidth) {
+            current.minWidth = minWidth;
             return *this;
         }
 
@@ -191,7 +222,7 @@ namespace Layout {
             return *this;
         }
 
-        LayoutBuilder &gap(int gap) {
+        LayoutBuilder &gap(const int gap) {
             current.gap = gap;
             return *this;
         }
@@ -201,13 +232,33 @@ namespace Layout {
             return *this;
         }
 
-        LayoutBuilder &drawFn(const DrawFn drawFn) {
+        LayoutBuilder &drawFn(const DrawFn &drawFn) {
             current.drawFn = drawFn;
             return *this;
         }
 
-        LayoutBuilder &sizeFn(const SizeFn sizeFn) {
+        LayoutBuilder &sizeFn(const SizeFn &sizeFn) {
             current.sizeFn = sizeFn;
+            return *this;
+        }
+
+        LayoutBuilder &updateFn(const EventFn &updateFn) {
+            current.updateFn = updateFn;
+            return *this;
+        }
+
+        LayoutBuilder &onMouseEnterFn(const EventFn &onHoverFn) {
+            current.onMouseEnterFn = onHoverFn;
+            return *this;
+        }
+
+        LayoutBuilder &onMouseLeaveFn(const EventFn &onMouseLeaveFn) {
+            current.onMouseLeaveFn = onMouseLeaveFn;
+            return *this;
+        }
+
+        LayoutBuilder &onMouseClickFn(const EventFn &onMouseClickFn) {
+            current.onMouseClickFn = onMouseClickFn;
             return *this;
         }
 
@@ -254,7 +305,7 @@ namespace Layout {
 #endif
 
             std::vector<LayoutElement *> childrenToGrow;
-            while (mainRemain > 0) {
+            while (mainRemain > 0 && childrenGrowMain.size() > 0) {
                 // find smallest and second smallest
                 int smallest = INT_MAX;
                 int smallestChildIndex = -1;
@@ -290,11 +341,24 @@ namespace Layout {
 #endif
 
                 // grow
-                for (auto *child: childrenToGrow) {
-                    child->AddDimension(element.mainAxis, growAmount);
+                for (int i = int(childrenToGrow.size()) - 1; i >= 0; --i) {
+                    auto *child = childrenToGrow[i];
+                    // max constraint
+                    int childGrowAmount = growAmount;
+                    int max = child->GetMaxDimension(element.mainAxis);
+                    if (child->GetDimension(element.mainAxis) + growAmount > max) {
+#ifdef LAYOUT_VERBOSE
+                        std::cout << "Child " << child->debugName << " grow amount exceeds max, "
+                                << child->GetDimension(element.mainAxis) << "+" << growAmount << " > " << max <<
+                                std::endl;
+#endif
+                        childGrowAmount = max - child->GetDimension(element.mainAxis);
+                        // remove child from toGrow
+                        childrenToGrow.erase(childrenToGrow.begin() + i);
+                    }
+                    child->AddDimension(element.mainAxis, childGrowAmount);
+                    mainRemain -= childGrowAmount;
                 }
-
-                mainRemain -= growAmount * childrenToGrow.size();
             }
         }
 
@@ -318,9 +382,9 @@ namespace Layout {
 
     void CalculateSize(LayoutElement &element) {
         // recalculate Fit sizing
-        int mainSum = element.gap * (element.children.size() - 1);
+        int mainSum = 0;
         if (element.children.size() > 0)
-            mainSum += element.padding * 2;
+            mainSum += element.gap * (element.children.size() - 1) + element.padding * 2;
 
         int maxCross = 0;
         for (auto &child: element.children) {
@@ -330,13 +394,16 @@ namespace Layout {
             mainSum += main;
             maxCross = std::max(maxCross, cross);
         }
-        maxCross += element.padding * 2;
+        if (element.children.size() > 0)
+            maxCross += element.padding * 2;
 
         if (element.heightSizing != FIXED) {
             element.height = element.mainAxis == HORIZONTAL ? maxCross : mainSum;
+            element.height = std::max(element.minHeight, element.height);
         }
         if (element.widthSizing != FIXED) {
             element.width = element.mainAxis == HORIZONTAL ? mainSum : maxCross;
+            element.width = std::max(element.minWidth, element.width);
         }
     }
 
