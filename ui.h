@@ -51,6 +51,15 @@ namespace UI {
         }
     }
 
+    using DrawImageFn = void(*)(const std::string &path, const int x, const int y, const int w, const int h);
+    inline DrawImageFn drawImageFn = nullptr;
+
+    inline void UI_DrawImage(const std::string &path, const int x, const int y, const int w, const int h) {
+        if (drawImageFn != nullptr) {
+            drawImageFn(path, x, y, w, h);
+        }
+    }
+
     using DrawTextFn = void(*)(const char *, int, int, float);
     inline DrawTextFn drawTextFn = nullptr;
 
@@ -189,7 +198,7 @@ namespace UI {
 
     struct UI_Text {
         Layout::LayoutElement *layout;
-        const char *text;
+        std::string text;
         float scale = 1.0;
         TextWrap wrap = WRAP_WORD;
 
@@ -198,8 +207,8 @@ namespace UI {
                 layout->height = UI_MeasureTextHeight(UI_WrapText(text, scale, layout->width).c_str(),
                                                       scale);
             } else {
-                layout->width = UI_MeasureText(text, scale);
-                layout->height = UI_MeasureTextHeight(text, scale);
+                layout->width = UI_MeasureText(text.c_str(), scale);
+                layout->height = UI_MeasureTextHeight(text.c_str(), scale);
             }
         }
 
@@ -208,7 +217,7 @@ namespace UI {
                 UI_DrawText(
                     UI_WrapText(text, scale, layout->width).c_str(), layout->x, layout->y, scale);
             } else {
-                UI_DrawText(text, layout->x, layout->y, scale);
+                UI_DrawText(text.c_str(), layout->x, layout->y, scale);
             }
         }
 
