@@ -56,6 +56,17 @@ void Raylib_DrawImage(const std::string &path, const int x, const int y, const i
                    {0, 0}, 0.0f, WHITE);
 }
 
+std::array<int, 2> Raylib_MeasureImage(const std::string &path) {
+    if (textures.find(path) == textures.end()) {
+        if (!FileExists(path.c_str())) {
+            std::cerr << "Texture file not found: " << path << std::endl;
+            return {0, 0};
+        }
+        textures[path] = LoadTexture(path.c_str());
+    }
+    Texture2D texture = textures[path];
+    return {texture.width, texture.height};
+}
 
 std::array<float, 2> Raylib_GetMousePos() {
     const Vector2 pos = GetMousePosition();
@@ -68,6 +79,7 @@ void UI_Raylib_Init() {
     UI::drawTextFn = &Raylib_DrawText;
     UI::drawRectFn = &Raylib_DrawRectangle;
     UI::drawImageFn = &Raylib_DrawImage;
+    UI::measureImageFn = &Raylib_MeasureImage;
     UI::measureTextFn = &Raylib_MeasureText;
     UI::measureTextHeightFn = &Raylib_MeasureTextHeight;
 }

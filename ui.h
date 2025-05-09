@@ -13,7 +13,7 @@
 namespace UI {
     using UI_Color = std::array<int, 4>;
     inline UI_Color UI_GRAY = {128, 128, 128, 255};
-    inline UI_Color UI_BLACK = {0, 0, 0, 0};
+    inline UI_Color UI_BLACK = {0, 0, 0, 255};
     inline UI_Color UI_WHITE = {255, 255, 255, 255};
     inline UI_Color UI_RED = {255, 0, 0, 255};
     inline UI_Color UI_GREEN = {0, 255, 0, 255};
@@ -58,6 +58,16 @@ namespace UI {
         if (drawImageFn != nullptr) {
             drawImageFn(path, x, y, w, h);
         }
+    }
+
+    using MeasureImageFn = std::array<int, 2>(*)(const std::string &path);
+    inline MeasureImageFn measureImageFn = nullptr;
+
+    inline std::array<int, 2> UI_MeasureImage(const std::string &path) {
+        if (measureImageFn != nullptr) {
+            return measureImageFn(path);
+        }
+        return {0, 0};
     }
 
     using DrawTextFn = void(*)(const char *, int, int, float);
@@ -170,14 +180,14 @@ namespace UI {
             if (CollisionMouseLayout(*current) && !current->hovering) {
                 if (current->onMouseEnterFn != nullptr) {
                     current->onMouseEnterFn(current);
-                    current->hovering = true;
                 }
+                current->hovering = true;
             }
             if (!CollisionMouseLayout(*current) && current->hovering) {
                 if (current->onMouseLeaveFn != nullptr) {
                     current->onMouseLeaveFn(current);
-                    current->hovering = false;
                 }
+                current->hovering = false;
             }
             if (CollisionMouseLayout(*current) && UI_IsMousePressed()) {
                 if (current->onMouseClickFn != nullptr) {
@@ -218,6 +228,43 @@ namespace UI {
                     UI_WrapText(text, scale, layout->width).c_str(), layout->x, layout->y, scale);
             } else {
                 UI_DrawText(text.c_str(), layout->x, layout->y, scale);
+            }
+        }
+
+        void Link() {
+            if (layout == nullptr) return;
+            layout->sizeFn = [&](Layout::LayoutElement *layout) {
+                SizeFn(layout);
+            };
+            layout->drawFn = [&](Layout::LayoutElement *layout) {
+                DrawFn(layout);
+            };
+        }
+    };
+
+    struct UI_Image {
+        Layout::LayoutElement *layout;
+        std::string path;
+        Layout::Alignment alignment = Layout::Alignment::CENTER;
+
+        void SizeFn(Layout::LayoutElement *layout) {
+        }
+
+        void DrawFn(Layout::LayoutElement *layout) {
+            const std::array<int, 2> size = UI_MeasureImage(path);
+            const float aspect = static_cast<float>(size[0]) / static_cast<float>(size[1]);
+            const float width = std::min(static_cast<float>(layout->width), layout->height * aspect);
+            const float height = std::min(static_cast<float>(layout->height), layout->width / aspect);
+            if (alignment == Layout::Alignment::CENTER) {
+                const int x = layout->x + (layout->width - width) / 2;
+                const int y = layout->y + (layout->height - height) / 2;
+                UI_DrawImage(path, x, y, width, height);
+            } else if (alignment == Layout::Alignment::END) {
+                const int x = layout->x + (layout->width - width);
+                const int y = layout->y + (layout->height - height);
+                UI_DrawImage(path, x, y, width, height);
+            } else {
+                UI_DrawImage(path, layout->x, layout->y, width, height);
             }
         }
 
